@@ -31,12 +31,12 @@ public class UserController {
 
     @GetMapping
     @Operation(summary = "Get all users with pagination", 
-               description = "Get all users. Use page and size query parameters for pagination.")
+               description = "Get all users with their roles. Use page and size query parameters for pagination.")
     public ResponseEntity<Page<User>> getAllUsers(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
         Pageable pageable = PageRequest.of(page, size);
-        return ResponseEntity.ok(userService.findAll(pageable));
+        return ResponseEntity.ok(userService.findAllWithRoles(pageable));
     }
 
     @GetMapping("/{id}")

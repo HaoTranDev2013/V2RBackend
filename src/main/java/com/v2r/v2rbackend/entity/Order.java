@@ -45,6 +45,10 @@ public class Order {
     //3. Hoàn tất đơn hàng
     private int status = 1;
 
+    // New field: check code for the order
+    @Column(name = "check_code")
+    private String checkCode;
+
     public int getOrderID() {
         return orderID;
     }
@@ -75,6 +79,15 @@ public class Order {
 
     public void setTotalPrice(double totalPrice) {
         this.totalPrice = totalPrice;
+    }
+
+    // Getter and setter for new field
+    public String getCheckCode() {
+        return checkCode;
+    }
+
+    public void setCheckCode(String checkCode) {
+        this.checkCode = checkCode;
     }
 
     public List<OrderDetail> getOrderDetails() {

@@ -1,0 +1,9 @@
+-- Initialize V2RDB database
+IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = 'V2RDB')
+BEGIN
+    CREATE DATABASE V2RDB;
+END
+GO
+
+USE V2RDB;
+GO

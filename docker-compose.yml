@@ -1,0 +1,54 @@
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-CU10-ubuntu-22.04
+    container_name: sqlserver_container
+    restart: always
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=YourStrong@Passw0rd
+    ports:
+      - "1433:1433"
+    volumes:
+      - sql_data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'YourStrong@Passw0rd' -C -Q 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  db-init:
+    image: mcr.microsoft.com/mssql-tools
+    container_name: db_init_container
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    volumes:
+      - ./init-db.sql:/init-db.sql
+    command: >
+      /bin/bash -c "
+      echo 'Waiting for SQL Server to be fully ready...' &&
+      sleep 10s &&
+      echo 'Creating database if it does not exist...' &&
+      /opt/mssql-tools/bin/sqlcmd -S sqlserver -U sa -P 'YourStrong@Passw0rd' -Q 'IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = ''V2RDB'') CREATE DATABASE V2RDB;' &&
+      echo 'Database V2RDB created or already exists. Running init script...' &&
+      /opt/mssql-tools/bin/sqlcmd -S sqlserver -U sa -P 'YourStrong@Passw0rd' -d V2RDB -i /init-db.sql
+      "
+    restart: "no"
+
+  springapp:
+    build: .
+    container_name: springboot_container
+    restart: always
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+    ports:
+      - "8081:8081"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:sqlserver://sqlserver:1433;databaseName=V2RDB;encrypt=false;trustServerCertificate=true
+      - SPRING_DATASOURCE_USERNAME=sa
+      - SPRING_DATASOURCE_PASSWORD=YourStrong@Passw0rd
+
+volumes:
+  sql_data:

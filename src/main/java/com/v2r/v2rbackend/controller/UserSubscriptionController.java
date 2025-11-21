@@ -9,6 +9,8 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.persistence.EntityNotFoundException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -23,6 +25,8 @@ import java.util.Optional;
 @RequestMapping("/api/user-subscriptions")
 @Tag(name = "User Subscription", description = "User subscription management endpoints - Register users to subscription plans after payment")
 public class UserSubscriptionController {
+
+    private static final Logger logger = LoggerFactory.getLogger(UserSubscriptionController.class);
 
     @Autowired
     private UserSubscriptionService userSubscriptionService;
@@ -145,6 +149,34 @@ public class UserSubscriptionController {
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body("Error cancelling subscription: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/change")
+    @Operation(summary = "Change user subscription", 
+               description = "Change/upgrade/downgrade a user's subscription to a new plan. Duration defaults to 1 month. Deactivates current subscription and creates a new one.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Subscription changed successfully"),
+            @ApiResponse(responseCode = "400", description = "Invalid input or subscription inactive"),
+            @ApiResponse(responseCode = "404", description = "User or subscription not found")
+    })
+    public ResponseEntity<?> changeSubscription(@RequestBody com.v2r.v2rbackend.dto.request.ChangeSubscriptionRequest request) {
+        try {
+            logger.info("Processing subscription change request for userId: {}, subscriptionId: {}", 
+                       request.getUserId(), request.getSubscriptionId());
+            UserSubscriptionResponse response = userSubscriptionService.changeUserSubscription(request);
+            logger.info("Subscription changed successfully for userId: {}", request.getUserId());
+            return ResponseEntity.ok(response);
+        } catch (EntityNotFoundException e) {
+            logger.error("Entity not found during subscription change: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Not found: " + e.getMessage());
+        } catch (IllegalArgumentException e) {
+            logger.error("Invalid argument during subscription change: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Invalid input: " + e.getMessage());
+        } catch (Exception e) {
+            logger.error("Unexpected error during subscription change", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Backend error: Unable to process subscription change. Error: " + e.getClass().getSimpleName() + " - " + e.getMessage());
         }
     }
 

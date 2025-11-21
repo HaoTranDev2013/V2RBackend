@@ -43,4 +43,7 @@ public interface UserSubscriptionService {
     
     // Get effective model limit for user (including free tier)
     int getEffectiveModelLimit(Integer userId);
+    
+    // Change user subscription
+    UserSubscriptionResponse changeUserSubscription(com.v2r.v2rbackend.dto.request.ChangeSubscriptionRequest request);
 }

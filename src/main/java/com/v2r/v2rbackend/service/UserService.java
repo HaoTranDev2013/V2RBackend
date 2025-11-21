@@ -11,6 +11,8 @@ import java.util.Optional;
 public interface UserService {
     List<User> findAll();
     Page<User> findAll(Pageable pageable);
+    List<User> findAllWithRoles();
+    Page<User> findAllWithRoles(Pageable pageable);
     Optional<User> findById(Integer id);
     User save(User user);
     User update(User user);

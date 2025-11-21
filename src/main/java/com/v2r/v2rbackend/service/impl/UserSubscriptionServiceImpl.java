@@ -37,6 +37,9 @@ public class UserSubscriptionServiceImpl implements UserSubscriptionService {
     private SubscriptionRepository subscriptionRepository;
 
     @Autowired
+    private com.v2r.v2rbackend.repository.PaymentRepository paymentRepository;
+
+    @Autowired
     private com.v2r.v2rbackend.config.SubscriptionConfig subscriptionConfig;
 
     @Override
@@ -65,12 +68,15 @@ public class UserSubscriptionServiceImpl implements UserSubscriptionService {
         payment.setAmount(request.getPaymentAmount() != null ? request.getPaymentAmount() : 0.0);
         payment.setStatus(true);
         payment.setPaymentDate(new Date());
+        
+        // Save payment first
+        Payment savedPayment = paymentRepository.save(payment);
 
         // Create user subscription
         UserSubscription userSubscription = new UserSubscription();
         userSubscription.setUser(user);
         userSubscription.setSubscription(subscription);
-        userSubscription.setPayment(payment);
+        userSubscription.setPayment(savedPayment);
         
         LocalDateTime now = LocalDateTime.now();
         userSubscription.setStartDate(now);
@@ -193,6 +199,112 @@ public class UserSubscriptionServiceImpl implements UserSubscriptionService {
         
         // No active subscription - return free tier
         return subscriptionConfig.getFreeModelLimit();
+    }
+
+    @Override
+    public UserSubscriptionResponse changeUserSubscription(com.v2r.v2rbackend.dto.request.ChangeSubscriptionRequest request) {
+        // Validate request
+        if (request == null) {
+            throw new IllegalArgumentException("Request cannot be null");
+        }
+        if (request.getUserId() == null) {
+            throw new IllegalArgumentException("User ID is required");
+        }
+        if (request.getSubscriptionId() == null) {
+            throw new IllegalArgumentException("Subscription ID is required");
+        }
+        
+        // Validate user exists
+        User user = userRepository.findById(request.getUserId())
+                .orElseThrow(() -> new EntityNotFoundException("User not found with id: " + request.getUserId()));
+
+        // Validate new subscription exists
+        Subscription newSubscription = subscriptionRepository.findById(request.getSubscriptionId())
+                .orElseThrow(() -> new EntityNotFoundException("Subscription not found with id: " + request.getSubscriptionId()));
+
+        // Check if new subscription is active
+        if (!newSubscription.isStatus()) {
+            throw new IllegalArgumentException("Subscription is not active");
+        }
+
+        // Default duration is 1 month
+        int durationMonths = 1;
+
+        // Get current active subscription (if any)
+        Optional<UserSubscription> currentSubscriptionOpt = getCurrentActiveSubscription(request.getUserId());
+
+        // Deactivate current subscription if exists
+        if (currentSubscriptionOpt.isPresent()) {
+            UserSubscription currentSubscription = currentSubscriptionOpt.get();
+            currentSubscription.setActive(false);
+            userSubscriptionRepository.save(currentSubscription);
+
+            // Revert the models from the current subscription
+            Subscription oldSubscription = currentSubscription.getSubscription();
+            if (oldSubscription.getNumberOfModel() != null) {
+                if (user.getNumberOfModel() == -1) {
+                    // Was unlimited, reset to free tier
+                    user.setNumberOfModel(subscriptionConfig.getFreeModelLimit());
+                } else {
+                    // Subtract old subscription models
+                    int currentModels = user.getNumberOfModel();
+                    int modelsToRemove = oldSubscription.getNumberOfModel() == -1 ? 0 : oldSubscription.getNumberOfModel();
+                    int newTotalModels = Math.max(subscriptionConfig.getFreeModelLimit(), currentModels - modelsToRemove);
+                    user.setNumberOfModel(newTotalModels);
+                }
+            }
+        } else {
+            // No current subscription, set to free tier first
+            user.setNumberOfModel(subscriptionConfig.getFreeModelLimit());
+        }
+
+        // Create payment record (basic record without transaction details)
+        Payment payment = new Payment();
+        payment.setTransactionCode("SUB_CHANGE_" + System.currentTimeMillis());
+        
+        // Parse price safely - remove any commas, dots (except decimal point)
+        try {
+            String priceStr = newSubscription.getPrice().replaceAll("[^0-9.]", "");
+            payment.setAmount(Double.parseDouble(priceStr));
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Invalid subscription price format: " + newSubscription.getPrice(), e);
+        }
+        
+        payment.setStatus(true);
+        payment.setPaymentDate(new Date());
+        
+        // Save payment first
+        Payment savedPayment = paymentRepository.save(payment);
+
+        // Create new user subscription
+        UserSubscription newUserSubscription = new UserSubscription();
+        newUserSubscription.setUser(user);
+        newUserSubscription.setSubscription(newSubscription);
+        newUserSubscription.setPayment(savedPayment);
+        
+        LocalDateTime now = LocalDateTime.now();
+        newUserSubscription.setStartDate(now);
+        newUserSubscription.setEndDate(now.plusMonths(durationMonths));
+        newUserSubscription.setActive(true);
+
+        // Save new subscription
+        UserSubscription savedSubscription = userSubscriptionRepository.save(newUserSubscription);
+
+        // Update user's numberOfModel based on new subscription
+        if (newSubscription.getNumberOfModel() != null) {
+            if (newSubscription.getNumberOfModel() == -1) {
+                // Unlimited models
+                user.setNumberOfModel(-1);
+            } else {
+                // Add new subscription models to current models
+                int currentModels = user.getNumberOfModel();
+                int newTotalModels = currentModels + newSubscription.getNumberOfModel();
+                user.setNumberOfModel(newTotalModels);
+            }
+            userRepository.save(user);
+        }
+
+        return convertToResponse(savedSubscription);
     }
 
     private UserSubscriptionResponse convertToResponse(UserSubscription subscription) {
